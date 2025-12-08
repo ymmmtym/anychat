@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>anychat</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; background: #e5ddd5; }
+    #messages { flex: 1; overflow-y: auto; padding: 20px; }
+    .message { margin-bottom: 15px; display: flex; }
+    .message.own { justify-content: flex-end; }
+    .bubble { max-width: 70%; padding: 10px 15px; border-radius: 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); position: relative; word-wrap: break-word; white-space: pre-wrap; }
+    .time { font-size: 11px; color: #999; margin-top: 5px; text-align: right; }
+    #form { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
+    #input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 20px; outline: none; resize: none; font-family: sans-serif; max-height: 120px; }
+    #send { padding: 10px 20px; margin-left: 10px; background: #9333ea; color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; align-self: flex-end; }
+    #send:hover { background: #7e22ce; }
+  </style>
+</head>
+<body>
+  <div id="messages"></div>
+  <form id="form">
+    <textarea id="input" rows="1" autocomplete="off" placeholder="メッセージを入力..."></textarea>
+    <button id="send">送信</button>
+  </form>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const translations = {
+      ja: { placeholder: 'メッセージを入力...', send: '送信' },
+      en: { placeholder: 'Type a message...', send: 'Send' },
+      zh: { placeholder: '输入消息...', send: '发送' },
+      ko: { placeholder: '메시지를 입력하세요...', send: '전송' },
+      es: { placeholder: 'Escribe un mensaje...', send: 'Enviar' },
+      fr: { placeholder: 'Tapez un message...', send: 'Envoyer' },
+      de: { placeholder: 'Nachricht eingeben...', send: 'Senden' },
+      pt: { placeholder: 'Digite uma mensagem...', send: 'Enviar' },
+      ru: { placeholder: 'Введите сообщение...', send: 'Отправить' },
+      ar: { placeholder: '...اكتب رسالة', send: 'إرسال' }
+    };
+
+    const userColors = {};
+
+    function getUserColor(userId) {
+      if (!userColors[userId]) {
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) {
+          hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const h = hash % 360;
+        const s = 70 + (hash % 20);
+        const l = 80 + (hash % 15);
+        userColors[userId] = `hsl(${h}, ${s}%, ${l}%)`;
+      }
+      return userColors[userId];
+    }
+
+    const lang = navigator.language.split('-')[0];
+    const t = translations[lang] || translations.en;
+
+    const socket = io();
+    const messages = document.getElementById('messages');
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+
+    input.placeholder = t.placeholder;
+    sendBtn.textContent = t.send;
+
+    let userId = localStorage.getItem('userId');
+    if (!userId) {
+      userId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('userId', userId);
+    }
+
+    socket.on('history', (msgs) => {
+      msgs.forEach(msg => addMessage(msg, msg.userId === userId));
+    });
+
+    socket.on('message', (msg) => {
+      addMessage(msg, msg.userId === userId);
+    });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (text && text.length <= 5000) {
+        socket.emit('message', { text, userId });
+        input.value = '';
+        input.style.height = 'auto';
+      }
+    });
+
+    let isComposing = false;
+
+    input.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+
+    input.addEventListener('compositionend', () => {
+      isComposing = false;
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+        e.preventDefault();
+        form.dispatchEvent(new Event('submit'));
+      }
+    });
+
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = input.scrollHeight + 'px';
+    });
+
+    function addMessage(msg, isOwn) {
+      const div = document.createElement('div');
+      div.className = 'message' + (isOwn ? ' own' : '');
+      const time = new Date(msg.timestamp).toLocaleTimeString(navigator.language);
+      const color = getUserColor(msg.userId);
+      
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.style.background = color;
+      bubble.textContent = msg.text;
+      
+      const timeEl = document.createElement('div');
+      timeEl.className = 'time';
+      timeEl.textContent = time;
+      bubble.appendChild(timeEl);
+      
+      div.appendChild(bubble);
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+  </script>
+</body>
+</html>
