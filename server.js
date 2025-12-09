@@ -8,23 +8,110 @@ const io = socketIO(server, {
   cors: {
     origin: process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
     methods: ['GET', 'POST']
-  }
+  },
+  maxHttpBufferSize: 1e6,
+  pingTimeout: 60000
 });
 
-const messages = [];
 const MAX_MESSAGES = 1000;
 const MAX_MESSAGE_LENGTH = 5000;
 const RATE_LIMIT_WINDOW = 10000;
 const RATE_LIMIT_MAX = 10;
+const MAX_CONNECTIONS = 100;
+const STORAGE_TYPE = process.env.STORAGE_TYPE || 'memory'; // 'memory' or 'redis'
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 const rateLimitMap = new Map();
+let connectionCount = 0;
+
+// Storage abstraction
+class MessageStorage {
+  async getMessages() {}
+  async addMessage(msg) {}
+  async getCount() {}
+}
+
+class MemoryStorage extends MessageStorage {
+  constructor() {
+    super();
+    this.messages = [];
+  }
+
+  async getMessages() {
+    return this.messages;
+  }
+
+  async addMessage(msg) {
+    this.messages.push(msg);
+    if (this.messages.length > MAX_MESSAGES) {
+      this.messages.shift();
+    }
+  }
+
+  async getCount() {
+    return this.messages.length;
+  }
+}
+
+class RedisStorage extends MessageStorage {
+  constructor(url) {
+    super();
+    this.redis = null;
+    this.key = 'anychat:messages';
+    this.init(url);
+  }
+
+  async init(url) {
+    try {
+      const redis = require('redis');
+      this.redis = redis.createClient({ url });
+      await this.redis.connect();
+      console.log('Redis connected');
+    } catch (err) {
+      console.error('Redis connection failed:', err.message);
+      console.log('Falling back to memory storage');
+      return new MemoryStorage();
+    }
+  }
+
+  async getMessages() {
+    if (!this.redis) return [];
+    const data = await this.redis.lRange(this.key, 0, -1);
+    return data.map(item => JSON.parse(item));
+  }
+
+  async addMessage(msg) {
+    if (!this.redis) return;
+    await this.redis.rPush(this.key, JSON.stringify(msg));
+    const count = await this.redis.lLen(this.key);
+    if (count > MAX_MESSAGES) {
+      await this.redis.lTrim(this.key, -MAX_MESSAGES, -1);
+    }
+  }
+
+  async getCount() {
+    if (!this.redis) return 0;
+    return await this.redis.lLen(this.key);
+  }
+}
+
+const storage = STORAGE_TYPE === 'redis' ? new RedisStorage(REDIS_URL) : new MemoryStorage();
+
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 app.use(express.static('public'));
 
-app.get('/stats', (req, res) => {
+app.get('/stats', async (req, res) => {
   const mem = process.memoryUsage();
   res.json({
-    messages: messages.length,
+    messages: await storage.getCount(),
+    storage: STORAGE_TYPE,
     memory: {
       rss: `${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
       heapUsed: `${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
@@ -33,10 +120,23 @@ app.get('/stats', (req, res) => {
   });
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
+  connectionCount++;
+  
+  if (connectionCount > MAX_CONNECTIONS) {
+    socket.disconnect(true);
+    connectionCount--;
+    return;
+  }
+
+  const messages = await storage.getMessages();
   socket.emit('history', messages);
   
-  socket.on('message', (data) => {
+  socket.on('disconnect', () => {
+    connectionCount--;
+  });
+  
+  socket.on('message', async (data) => {
     if (!data || typeof data.text !== 'string' || typeof data.userId !== 'string') {
       return;
     }
@@ -67,12 +167,7 @@ io.on('connection', (socket) => {
       userId: data.userId 
     };
     
-    messages.push(msg);
-    
-    if (messages.length > MAX_MESSAGES) {
-      messages.shift();
-    }
-    
+    await storage.addMessage(msg);
     io.emit('message', msg);
   });
 });
