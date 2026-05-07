@@ -38,6 +38,10 @@ app.use((req, res, next) => {
 
 app.use(express.static('public'));
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.get('/stats', async (req, res) => {
   const mem = process.memoryUsage();
   res.json({
