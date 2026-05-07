@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
-const { MemoryStorage, RedisStorage, MAX_MESSAGES } = require('./lib/storage');
+const { createStorage, MAX_MESSAGES } = require('./lib/storage');
 
 const app = express();
 const server = http.createServer(app);
@@ -18,15 +18,14 @@ const MAX_MESSAGE_LENGTH = 5000;
 const RATE_LIMIT_WINDOW = 10000;
 const RATE_LIMIT_MAX = 10;
 const MAX_CONNECTIONS = 100;
-const STORAGE_TYPE = process.env.STORAGE_TYPE || 'memory'; // 'memory' or 'redis'
+const STORAGE_TYPE = process.env.STORAGE_TYPE || 'memory';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 const rateLimitMap = new Map();
 let connectionCount = 0;
 
-// Storage is initialized from lib/storage.js
-
-const storage = STORAGE_TYPE === 'redis' ? new RedisStorage(REDIS_URL) : new MemoryStorage();
+let storage;
+createStorage(STORAGE_TYPE, REDIS_URL).then(s => { storage = s; });
 
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:");
