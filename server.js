@@ -56,19 +56,18 @@ app.get('/stats', async (req, res) => {
 
 io.on('connection', async (socket) => {
   connectionCount++;
-  
+
+  socket.on('disconnect', () => {
+    connectionCount--;
+  });
+
   if (connectionCount > MAX_CONNECTIONS) {
     socket.disconnect(true);
-    connectionCount--;
     return;
   }
 
   const messages = await storage.getMessages();
   socket.emit('history', messages);
-  
-  socket.on('disconnect', () => {
-    connectionCount--;
-  });
   
   socket.on('message', async (data) => {
     if (!data || typeof data.text !== 'string' || typeof data.userId !== 'string') {
