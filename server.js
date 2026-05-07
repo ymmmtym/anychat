@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
+const { createStorage, MAX_MESSAGES } = require('./lib/storage');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,80 +14,18 @@ const io = socketIO(server, {
   pingTimeout: 60000
 });
 
-const MAX_MESSAGES = 1000;
 const MAX_MESSAGE_LENGTH = 5000;
 const RATE_LIMIT_WINDOW = 10000;
 const RATE_LIMIT_MAX = 10;
 const MAX_CONNECTIONS = 100;
-const STORAGE_TYPE = process.env.STORAGE_TYPE || 'memory'; // 'memory' or 'redis'
+const STORAGE_TYPE = process.env.STORAGE_TYPE || 'memory';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 const rateLimitMap = new Map();
 let connectionCount = 0;
 
-// Storage abstraction
-class MessageStorage {
-  async getMessages() {}
-  async addMessage(msg) {}
-  async getCount() {}
-}
-
-class MemoryStorage extends MessageStorage {
-  constructor() {
-    super();
-    this.messages = [];
-  }
-
-  async getMessages() {
-    return this.messages;
-  }
-
-  async addMessage(msg) {
-    this.messages.push(msg);
-    if (this.messages.length > MAX_MESSAGES) {
-      this.messages.shift();
-    }
-  }
-
-  async getCount() {
-    return this.messages.length;
-  }
-}
-
-async function createStorage() {
-  if (STORAGE_TYPE !== 'redis') return new MemoryStorage();
-  try {
-    const redis = require('redis');
-    const client = redis.createClient({ url: REDIS_URL });
-    await client.connect();
-    console.log('Redis connected');
-    return {
-      redis: client,
-      key: 'anychat:messages',
-      async getMessages() {
-        const data = await this.redis.lRange(this.key, 0, -1);
-        return data.map(item => JSON.parse(item));
-      },
-      async addMessage(msg) {
-        await this.redis.rPush(this.key, JSON.stringify(msg));
-        const count = await this.redis.lLen(this.key);
-        if (count > MAX_MESSAGES) {
-          await this.redis.lTrim(this.key, -MAX_MESSAGES, -1);
-        }
-      },
-      async getCount() {
-        return await this.redis.lLen(this.key);
-      }
-    };
-  } catch (err) {
-    console.error('Redis connection failed:', err.message);
-    console.log('Falling back to memory storage');
-    return new MemoryStorage();
-  }
-}
-
 let storage;
-createStorage().then(s => { storage = s; });
+createStorage(STORAGE_TYPE, REDIS_URL).then(s => { storage = s; });
 
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:");
@@ -175,4 +114,10 @@ setInterval(() => {
   }
 }, 60000);
 
-server.listen(3000, () => console.log('http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+
+if (require.main === module) {
+  server.listen(PORT, () => console.log('http://localhost:' + PORT));
+}
+
+module.exports = { app, server, io, storage };
