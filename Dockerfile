@@ -19,4 +19,4 @@ USER nodejs
 
 EXPOSE 3000
 
-CMD ["bun", "run", "server.js"]
+CMD ["node", "server.js"]
