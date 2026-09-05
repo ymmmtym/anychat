@@ -1,11 +1,11 @@
-FROM oven/bun:1.3.14-alpine AS builder
+FROM oven/bun:1.4.2-alpine AS builder
 
 WORKDIR /app
 
 COPY package.json ./
 RUN bun install --production
 
-FROM oven/bun:1.3.14-alpine
+FROM oven/bun:1.4.2-alpine
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
