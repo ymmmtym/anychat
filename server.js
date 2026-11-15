@@ -50,10 +50,10 @@ function computeInlineHashes(html) {
   return { scriptHashes, styleHashes };
 }
 
-function computeCspHeader() {
+async function computeCspHeader() {
   const fallback = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:";
   try {
-    const html = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+    const html = await fs.promises.readFile(INDEX_HTML_PATH, 'utf8');
     const { scriptHashes, styleHashes } = computeInlineHashes(html);
     const scriptSrc = ["'self'", ...scriptHashes].join(' ');
     const styleSrc = ["'self'", ...styleHashes].join(' ');
@@ -64,12 +64,16 @@ function computeCspHeader() {
   }
 }
 
-app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', computeCspHeader());
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  next();
+app.use(async (req, res, next) => {
+  try {
+    res.setHeader('Content-Security-Policy', await computeCspHeader());
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.use(express.static('public'));
