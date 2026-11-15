@@ -33,7 +33,8 @@ createStorage(STORAGE_TYPE, REDIS_URL).then(s => { storage = s; });
 const INDEX_HTML_PATH = path.join(__dirname, 'public', 'index.html');
 
 function sha256(content) {
-  return "'sha256-" + crypto.createHash('sha256').update(content, 'utf8').digest('base64') + "'";
+  const normalized = content.replace(/\r\n?/g, '\n');
+  return "'sha256-" + crypto.createHash('sha256').update(normalized, 'utf8').digest('base64') + "'";
 }
 
 // Hashes of the inline <script>/<style> blocks so the CSP can allow them
@@ -156,4 +157,4 @@ if (require.main === module) {
   server.listen(PORT, () => console.log('http://localhost:' + PORT));
 }
 
-module.exports = { app, server, io, storage };
+module.exports = { app, server, io, storage, computeInlineHashes };

@@ -70,6 +70,18 @@ describe('HTTP Endpoints', () => {
       }
     });
 
+    test('should normalize CRLF line endings before computing CSP hashes', async () => {
+      const { computeInlineHashes } = require('../server');
+      const htmlCrlf = '  <style>\r\n  body { color: red; }\r\n  </style>\r\n  <script>\r\n  const x = 1;\r\n  </script>';
+      const { styleHashes, scriptHashes } = computeInlineHashes(htmlCrlf);
+      expect(styleHashes).toHaveLength(1);
+      expect(scriptHashes).toHaveLength(1);
+      const styleHash = "'sha256-" + crypto.createHash('sha256').update('\n  body { color: red; }\n  ', 'utf8').digest('base64') + "'";
+      const scriptHash = "'sha256-" + crypto.createHash('sha256').update('\n  const x = 1;\n  ', 'utf8').digest('base64') + "'";
+      expect(styleHashes[0]).toBe(styleHash);
+      expect(scriptHashes[0]).toBe(scriptHash);
+    });
+
     test('should set X-Content-Type-Options: nosniff', async () => {
       const res = await fetch(BASE_URL + '/stats');
       expect(res.headers.get('x-content-type-options')).toBe('nosniff');
