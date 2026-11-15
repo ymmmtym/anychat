@@ -21,7 +21,7 @@
 <body>
   <div id="messages"></div>
   <form id="form">
-    <textarea id="input" rows="1" autocomplete="off" placeholder="メッセージを入力..."></textarea>
+    <textarea id="input" rows="1" maxlength="5000" autocomplete="off" placeholder="メッセージを入力..."></textarea>
     <button id="send">送信</button>
   </form>
   <script src="/socket.io/socket.io.js"></script>
