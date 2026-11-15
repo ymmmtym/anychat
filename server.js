@@ -50,14 +50,24 @@ function computeInlineHashes(html) {
   return { scriptHashes, styleHashes };
 }
 
+let cachedCspHeader = null;
+let cachedHtmlMtimeMs = 0;
+
 async function computeCspHeader() {
   const fallback = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:";
   try {
+    const stats = await fs.promises.stat(INDEX_HTML_PATH);
+    if (cachedCspHeader && stats.mtimeMs === cachedHtmlMtimeMs) {
+      return cachedCspHeader;
+    }
     const html = await fs.promises.readFile(INDEX_HTML_PATH, 'utf8');
     const { scriptHashes, styleHashes } = computeInlineHashes(html);
     const scriptSrc = ["'self'", ...scriptHashes].join(' ');
     const styleSrc = ["'self'", ...styleHashes].join(' ');
-    return `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; connect-src 'self' ws: wss:`;
+    const csp = `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; connect-src 'self' ws: wss:`;
+    cachedCspHeader = csp;
+    cachedHtmlMtimeMs = stats.mtimeMs;
+    return csp;
   } catch (err) {
     console.error('Failed to compute CSP hashes for index.html:', err.message);
     return fallback;
